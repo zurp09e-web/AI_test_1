@@ -1,0 +1,25 @@
+{
+  "name": "blockcraft-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A browser-first voxel sandbox with a Java Edition server bridge.",
+  "scripts": {
+    "dev": "concurrently -k -n WEB,BRIDGE -c cyan,magenta \"vite --host 0.0.0.0\" \"node server/index.js\"",
+    "build": "vite build",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mineflayer": "^4.39.0",
+    "three": "^0.186.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "vite": "^7.1.7"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

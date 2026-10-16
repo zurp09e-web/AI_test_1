@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101613" />
+    <meta name="description" content="A cozy voxel sandbox. Build a world, explore it, or connect to a Java Edition server." />
+    <title>Blockcraft — Make a little world</title>
+  </head>
+  <body>
+    <div id="app">
+      <main id="game-shell">
+        <canvas id="game-canvas" aria-label="Voxel world" tabindex="0"></canvas>
+        <div id="world-vignette"></div>
+
+        <header class="topbar">
+          <button class="brand" id="home-button" aria-label="Open world menu">
+            <span class="brand-mark"><span></span><span></span><span></span></span>
+            <span class="brand-word">BLOCKCRAFT<span class="brand-dot">.</span><small>POCKET WORLDS</small></span>
+          </button>
+          <div class="world-meta">
+            <span class="live-dot"></span>
+            <span id="world-label">Cedar Valley</span>
+            <span class="meta-divider"></span>
+            <span id="mode-label">CREATIVE</span>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" id="sound-button" title="Toggle ambient sound" aria-label="Toggle ambient sound"><span class="sound-icon">♪</span></button>
+            <button class="icon-button" id="settings-button" title="Settings" aria-label="Settings"><span class="gear-icon">⚙</span></button>
+            <button class="pause-button" id="pause-button"><span class="pause-glyph">Ⅱ</span> <span>Pause</span></button>
+          </div>
+        </header>
+
+        <section class="hud" id="hud" aria-label="Player status">
+          <div class="status-stack">
+            <div class="status-pill"><span class="status-icon heart-icon">♥</span><div class="heart-row" id="health-hearts"></div></div>
+            <div class="status-pill"><span class="status-icon food-icon">▰</span><div class="food-row" id="food-icons"></div></div>
+          </div>
+          <div class="compass-card">
+            <div class="compass-head"><span id="compass-direction">S</span><span class="compass-title">FIELD NOTES</span><span class="weather-icon" id="weather-icon">☀</span></div>
+            <div class="coord-grid" id="coord-grid">
+              <div><small>X</small><b id="coord-x">0</b></div>
+              <div><small>Y</small><b id="coord-y">0</b></div>
+              <div><small>Z</small><b id="coord-z">0</b></div>
+            </div>
+            <div class="biome-name" id="biome-name">MEADOW</div>
+          </div>
+        </section>
+
+        <div class="crosshair" id="crosshair" aria-hidden="true"><i></i><i></i></div>
+        <div class="target-hint" id="target-hint"></div>
+
+        <aside class="quick-tip" id="quick-tip"><span class="keycap">WASD</span> move <span class="tip-sep">·</span> <span class="keycap">LMB</span> mine <span class="tip-sep">·</span> <span class="keycap">RMB</span> place <span class="tip-sep">·</span> <span class="keycap">E</span> inventory</aside>
+        <div class="toast" id="toast" aria-live="polite"></div>
+
+        <section class="bottom-hud" id="bottom-hud">
+          <div class="xp-area"><div class="xp-label"><span>EXPERIENCE</span><b id="xp-level">01</b></div><div class="xp-track"><i id="xp-fill"></i></div></div>
+          <nav class="hotbar" id="hotbar" aria-label="Hotbar"></nav>
+          <div class="hand-note"><span id="selected-name">Grass Block</span><small>SELECTED</small></div>
+        </section>
+
+        <section class="screen-layer" id="menu-screen">
+          <div class="menu-backdrop"></div>
+          <div class="menu-content">
+            <div class="menu-topline"><span class="brand-mark large"><span></span><span></span><span></span></span><span>YOUR WORLD, YOUR RULES</span></div>
+            <h1>Make a little<br /><em>world.</em></h1>
+            <p class="menu-copy">A quiet place to build, explore, and get wonderfully lost.</p>
+            <div class="world-options">
+              <label><span>GAME MODE</span><select id="new-world-mode"><option value="creative">Creative</option><option value="survival">Survival</option></select></label>
+              <label><span>WORLD SEED</span><input id="seed-input" inputmode="numeric" placeholder="Random seed" maxlength="12" /></label>
+            </div>
+            <div class="menu-buttons">
+              <button class="primary-button" id="play-button"><span class="play-triangle">▶</span><span><b id="play-label">Create new world</b><small>Pick a mode and step inside</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button" id="server-menu-button"><span class="button-icon">⌁</span><span><b>Join a server</b><small>Connect to a Java Edition world</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button subtle-button" id="resume-button"><span class="button-icon">◷</span><span><b>Continue Cedar Valley</b><small>Last played just now · Auto-saved</small></span><span class="button-arrow">↗</span></button>
+            </div>
+            <div class="menu-foot"><span>BUILD 0.1.0 · LOCAL WORLD</span><span>WASD TO MOVE <i>•</i> MOUSE TO LOOK</span></div>
+          </div>
+          <div class="menu-art"><div class="art-sun"></div><div class="art-mountain far"></div><div class="art-mountain near"></div><div class="art-ground"></div><div class="art-cube cube-one"></div><div class="art-cube cube-two"></div><div class="art-tree"><i></i><b></b></div><span class="art-label">SEED 482901</span></div>
+        </section>
+
+        <section class="screen-layer hidden" id="pause-screen">
+          <div class="pause-card">
+            <div class="eyebrow"><span class="live-dot"></span> WORLD PAUSED</div>
+            <h2>Take your time.</h2>
+            <p>Your world is safely saved on this device.</p>
+            <div class="pause-actions">
+              <button class="primary-button compact" id="resume-game-button"><span class="play-triangle">▶</span><span><b>Back to game</b><small>Pick up where you left off</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button compact" id="inventory-button"><span class="button-icon">▦</span><span><b>Inventory & crafting</b><small>Manage your blocks</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button compact" id="pause-settings-button"><span class="button-icon">⚙</span><span><b>Settings</b><small>Adjust the view</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button compact" id="save-exit-button"><span class="button-icon">⌂</span><span><b>Save and return</b><small>Back to title screen</small></span><span class="button-arrow">↗</span></button>
+            </div>
+            <div class="pause-footer"><span>DAY <b id="day-number">01</b></span><span>PLAY TIME <b id="play-time">00:00</b></span><span>FPS <b id="fps-count">60</b></span></div>
+          </div>
+        </section>
+
+        <section class="screen-layer hidden" id="inventory-screen">
+          <div class="inventory-panel">
+            <div class="panel-heading"><div><div class="eyebrow">YOUR PACK</div><h2>Inventory</h2></div><button class="close-button" id="inventory-close" aria-label="Close inventory">×</button></div>
+            <div class="inventory-columns">
+              <div class="inventory-left"><div class="section-label">BLOCKS <span>Click a slot to select</span></div><div class="inventory-grid" id="inventory-grid"></div><div class="crafting-box"><div class="section-label">QUICK CRAFT <span>Simple recipes</span></div><div class="recipe-list" id="recipe-list"></div></div></div>
+              <div class="inventory-right"><div class="character-card"><div class="character-orbit"></div><div class="character-avatar"><div class="avatar-head"></div><div class="avatar-body"></div><div class="avatar-legs"></div></div><span>YOU</span></div><div class="inventory-stats"><div><span>MODE</span><b id="inventory-mode">Creative</b></div><div><span>WORLD TIME</span><b id="inventory-time">Morning</b></div><div><span>SEED</span><b id="inventory-seed">482901</b></div></div><button class="small-action" id="switch-mode-button">Switch to survival</button></div>
+            </div>
+            <div class="inventory-footer"><span>Press <kbd>E</kbd> to close</span><span>Drag is not needed — choose a stack, then use <kbd>1</kbd>–<kbd>9</kbd></span></div>
+          </div>
+        </section>
+
+        <section class="screen-layer hidden" id="server-screen">
+          <div class="server-card">
+            <div class="panel-heading"><div><div class="eyebrow"><span class="live-dot"></span> ONLINE WORLDS</div><h2>Join a server</h2></div><button class="close-button" id="server-close" aria-label="Close server screen">×</button></div>
+            <p class="server-intro">Connect to a Minecraft <b>Java Edition</b> server. Your local world stays right where you left it.</p>
+            <form id="server-form" class="server-form">
+              <label class="field full-field"><span>SERVER ADDRESS</span><input id="server-host" name="host" placeholder="play.example.net" autocomplete="off" required /><small>Domain or IP address</small></label>
+              <div class="field-row"><label class="field"><span>PORT</span><input id="server-port" name="port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>GAME VERSION</span><select id="server-version" name="version"><option value="">Auto detect</option><option>1.21.4</option><option>1.21.1</option><option>1.20.4</option><option>1.20.1</option><option>1.19.4</option><option>1.18.2</option><option>1.16.5</option></select></label></div>
+              <label class="field"><span>PLAYER NAME</span><input id="server-username" name="username" value="Builder" maxlength="16" required /></label>
+              <label class="field"><span>ACCOUNT TYPE</span><select id="server-auth" name="auth"><option value="offline">Offline / cracked server</option><option value="microsoft">Microsoft account (premium)</option></select><small>Premium servers require Microsoft sign-in.</small></label>
+              <div class="server-warning"><span>i</span><p>This is a Java Edition client bridge, not an official Mojang client. Only join servers you trust and follow their rules.</p></div>
+              <button class="primary-button connect-button" type="submit" id="connect-button"><span class="button-icon">⌁</span><span><b>Connect</b><small>Join this server from your world</small></span><span class="button-arrow">↗</span></button>
+            </form>
+          </div>
+        </section>
+
+        <section class="server-overlay hidden" id="server-overlay">
+          <div class="server-banner"><span class="live-dot"></span><div><b id="connected-server-title">Connected</b><small id="connected-server-subtitle">Java Edition server</small></div><span class="server-coords" id="remote-coords">XYZ 0, 0, 0</span><button class="disconnect-button" id="disconnect-button">Disconnect</button></div>
+          <div class="remote-hint" id="remote-hint">Server world stream <span>·</span> WASD moves your player</div>
+          <div class="server-chat" id="server-chat"><div class="chat-heading">SERVER CHAT <button id="chat-close" aria-label="Hide chat">×</button></div><div class="chat-messages" id="chat-messages"></div><form id="chat-form"><span>›</span><input id="chat-input" placeholder="Press T to chat..." maxlength="256" autocomplete="off" /><button>↗</button></form></div>
+          <div class="auth-card hidden" id="auth-card"><div class="eyebrow">MICROSOFT SIGN-IN</div><p id="auth-message">Complete sign-in in your browser.</p><a id="auth-link" href="https://microsoft.com/link" target="_blank" rel="noreferrer">Open sign-in page ↗</a><div class="auth-code"><span>CODE</span><b id="auth-code">••••••••</b><button id="copy-code">Copy</button></div></div>
+          <div class="remote-status hidden" id="remote-status"><span class="spinner"></span><span>Connecting to server…</span></div>
+        </section>
+
+        <section class="screen-layer hidden" id="settings-screen">
+          <div class="settings-card"><div class="panel-heading"><div><div class="eyebrow">TUNE YOUR WORLD</div><h2>Settings</h2></div><button class="close-button" id="settings-close" aria-label="Close settings">×</button></div><div class="settings-list">
+            <label class="setting-row"><span><b>Field of view</b><small>Wider view, more of the world</small></span><div class="range-wrap"><input id="fov-setting" type="range" min="65" max="100" value="78"><b id="fov-value">78°</b></div></label>
+            <label class="setting-row"><span><b>Render distance</b><small>Blocks in your local world</small></span><div class="range-wrap"><input id="distance-setting" type="range" min="24" max="64" step="8" value="48"><b id="distance-value">48</b></div></label>
+            <label class="setting-row"><span><b>Pixel outlines</b><small>Give blocks a crisp edge</small></span><input class="toggle" id="outline-setting" type="checkbox" checked></label>
+            <label class="setting-row"><span><b>Show coordinates</b><small>Display your position</small></span><input class="toggle" id="coords-setting" type="checkbox" checked></label>
+            <div class="settings-note"><span>✦</span><p>Settings are saved automatically. The local world runs entirely in your browser.</p></div>
+          </div></div>
+        </section>
+
+        <section class="screen-layer hidden" id="chat-screen">
+          <div class="command-panel"><div class="eyebrow">WORLD CHAT / COMMANDS</div><div class="command-log" id="command-log"></div><form id="command-form"><span>›</span><input id="command-input" placeholder="Try /help or say something..." autocomplete="off" /><button>↗</button></form><small>Press <kbd>Enter</kbd> to send · <kbd>Esc</kbd> to close</small></div>
+        </section>
+
+        <div class="watermark"><span class="watermark-mark">▰</span> BLOCKCRAFT <span>·</span> 0.1.0</div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
