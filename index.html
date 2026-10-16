@@ -50,7 +50,7 @@
         <div class="crosshair" id="crosshair" aria-hidden="true"><i></i><i></i></div>
         <div class="target-hint" id="target-hint"></div>
 
-        <aside class="quick-tip" id="quick-tip"><span class="keycap">WASD</span> move <span class="tip-sep">·</span> <span class="keycap">LMB</span> mine <span class="tip-sep">·</span> <span class="keycap">RMB</span> place <span class="tip-sep">·</span> <span class="keycap">E</span> inventory</aside>
+        <aside class="quick-tip" id="quick-tip"><span class="keycap">WASD</span> move <span class="tip-sep">·</span> <span class="keycap">LMB</span> mine / attack <span class="tip-sep">·</span> <span class="keycap">RMB</span> place / eat <span class="tip-sep">·</span> <span class="keycap">E</span> inventory</aside>
         <div class="toast" id="toast" aria-live="polite"></div>
 
         <section class="bottom-hud" id="bottom-hud">
@@ -64,14 +64,14 @@
           <div class="menu-content">
             <div class="menu-topline"><span class="brand-mark large"><span></span><span></span><span></span></span><span>YOUR WORLD, YOUR RULES</span></div>
             <h1>Make a little<br /><em>world.</em></h1>
-            <p class="menu-copy">A quiet place to build, explore, and get wonderfully lost.</p>
+            <p class="menu-copy">Build with the 1.12.2 catalogue, explore new biomes, and survive the night.</p>
             <div class="world-options">
               <label><span>GAME MODE</span><select id="new-world-mode"><option value="creative">Creative</option><option value="survival">Survival</option></select></label>
               <label><span>WORLD SEED</span><input id="seed-input" inputmode="numeric" placeholder="Random seed" maxlength="12" /></label>
             </div>
             <div class="menu-buttons">
               <button class="primary-button" id="play-button"><span class="play-triangle">▶</span><span><b id="play-label">Create new world</b><small>Pick a mode and step inside</small></span><span class="button-arrow">↗</span></button>
-              <button class="secondary-button" id="server-menu-button"><span class="button-icon">⌁</span><span><b>Join a server</b><small>Connect to a Java Edition world</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button" id="server-menu-button"><span class="button-icon">⌁</span><span><b>Servers</b><small>Join or host a Java Edition world</small></span><span class="button-arrow">↗</span></button>
               <button class="secondary-button subtle-button" id="resume-button"><span class="button-icon">◷</span><span><b>Continue Cedar Valley</b><small>Last played just now · Auto-saved</small></span><span class="button-arrow">↗</span></button>
             </div>
             <div class="menu-foot"><span>BUILD 0.1.0 · LOCAL WORLD</span><span>WASD TO MOVE <i>•</i> MOUSE TO LOOK</span></div>
@@ -98,7 +98,12 @@
           <div class="inventory-panel">
             <div class="panel-heading"><div><div class="eyebrow">YOUR PACK</div><h2>Inventory</h2></div><button class="close-button" id="inventory-close" aria-label="Close inventory">×</button></div>
             <div class="inventory-columns">
-              <div class="inventory-left"><div class="section-label">BLOCKS <span>Click a slot to select</span></div><div class="inventory-grid" id="inventory-grid"></div><div class="crafting-box"><div class="section-label">QUICK CRAFT <span>Simple recipes</span></div><div class="recipe-list" id="recipe-list"></div></div></div>
+              <div class="inventory-left">
+                <div class="section-label">1.12.2 CREATIVE MENU <span id="catalog-status">Loading versioned block and item data…</span></div>
+                <div class="inventory-toolbar"><input id="inventory-search" type="search" placeholder="Search blocks and items…" autocomplete="off"><div class="inventory-tabs" role="tablist" aria-label="Inventory category"><button class="active" data-inventory-tab="all">All</button><button data-inventory-tab="blocks">Blocks</button><button data-inventory-tab="items">Items</button></div></div>
+                <div class="inventory-grid" id="inventory-grid"></div>
+                <div class="crafting-box"><div class="section-label">CRAFTING & SMELTING <span id="recipe-count">Version 1.12.2</span></div><input id="recipe-search" class="recipe-search" type="search" placeholder="Find a recipe…" autocomplete="off"><div class="recipe-list" id="recipe-list"></div></div>
+              </div>
               <div class="inventory-right"><div class="character-card"><div class="character-orbit"></div><div class="character-avatar"><div class="avatar-head"></div><div class="avatar-body"></div><div class="avatar-legs"></div></div><span>YOU</span></div><div class="inventory-stats"><div><span>MODE</span><b id="inventory-mode">Creative</b></div><div><span>WORLD TIME</span><b id="inventory-time">Morning</b></div><div><span>SEED</span><b id="inventory-seed">482901</b></div></div><button class="small-action" id="switch-mode-button">Switch to survival</button></div>
             </div>
             <div class="inventory-footer"><span>Press <kbd>E</kbd> to close</span><span>Drag is not needed — choose a stack, then use <kbd>1</kbd>–<kbd>9</kbd></span></div>
@@ -107,16 +112,37 @@
 
         <section class="screen-layer hidden" id="server-screen">
           <div class="server-card">
-            <div class="panel-heading"><div><div class="eyebrow"><span class="live-dot"></span> ONLINE WORLDS</div><h2>Join a server</h2></div><button class="close-button" id="server-close" aria-label="Close server screen">×</button></div>
-            <p class="server-intro">Connect to a Minecraft <b>Java Edition</b> server. Your local world stays right where you left it.</p>
+            <div class="panel-heading"><div><div class="eyebrow"><span class="live-dot"></span> JAVA MULTIPLAYER</div><h2>Servers</h2></div><button class="close-button" id="server-close" aria-label="Close server screen">×</button></div>
+            <p class="server-intro">Join an existing Java server, or run a small server JAR from this computer for friends on your LAN.</p>
+            <div class="server-tabs" role="tablist" aria-label="Server options"><button type="button" class="active" data-server-tab="join" role="tab" aria-selected="true">Join a server</button><button type="button" data-server-tab="host" role="tab" aria-selected="false">Host on this PC</button></div>
+            <div class="server-tab-panel" id="join-server-panel">
             <form id="server-form" class="server-form">
               <label class="field full-field"><span>SERVER ADDRESS</span><input id="server-host" name="host" placeholder="play.example.net" autocomplete="off" required /><small>Domain or IP address</small></label>
-              <div class="field-row"><label class="field"><span>PORT</span><input id="server-port" name="port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>GAME VERSION</span><select id="server-version" name="version"><option value="">Auto detect</option><option>1.21.4</option><option>1.21.1</option><option>1.20.4</option><option>1.20.1</option><option>1.19.4</option><option>1.18.2</option><option>1.16.5</option></select></label></div>
+              <div class="field-row"><label class="field"><span>PORT</span><input id="server-port" name="port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>GAME VERSION</span><select id="server-version" name="version"><option value="">Auto detect</option><option>26.1</option><option>1.21.11</option><option>1.21.9</option><option>1.21.8</option><option>1.21.6</option><option>1.21.5</option><option>1.21.4</option><option>1.21.3</option><option>1.21.1</option><option>1.20.6</option><option>1.20.4</option><option>1.20.2</option><option>1.20.1</option><option>1.19.4</option><option>1.18.2</option><option>1.16.5</option><option>1.12.2</option></select></label></div>
               <label class="field"><span>PLAYER NAME</span><input id="server-username" name="username" value="Builder" maxlength="16" required /></label>
               <label class="field"><span>ACCOUNT TYPE</span><select id="server-auth" name="auth"><option value="offline">Offline / cracked server</option><option value="microsoft">Microsoft account (premium)</option></select><small>Premium servers require Microsoft sign-in.</small></label>
-              <div class="server-warning"><span>i</span><p>This is a Java Edition client bridge, not an official Mojang client. Only join servers you trust and follow their rules.</p></div>
+              <div class="server-warning"><span>i</span><p>This Java bridge is not an official Mojang client. Connections come from the machine running Node; hosted previews may use cloud IPs that anti-VPN checks reject. The app will not bypass server IP rules. Run locally on your normal connection with VPN/proxy off, or contact the server staff.</p></div>
               <button class="primary-button connect-button" type="submit" id="connect-button"><span class="button-icon">⌁</span><span><b>Connect</b><small>Join this server from your world</small></span><span class="button-arrow">↗</span></button>
             </form>
+            </div>
+            <div class="server-tab-panel hidden" id="host-server-panel">
+              <div class="host-runtime-status" id="host-runtime-status"><span class="host-status-light"></span><span id="host-status-text">Checking local Java and server status…</span></div>
+              <p class="host-intro">Choose a Minecraft Java 1.12.2 server JAR to run on this computer. Java 8 or newer is needed; the JAR must be compatible with the version your friends use.</p>
+              <form id="host-server-form" class="server-form">
+                <label class="field full-field"><span>SERVER JAR</span><input id="host-jar-file" type="file" accept=".jar,application/java-archive" required /><small id="host-jar-note">Select a trusted Mojang, Paper, or Spigot 1.12.2 server JAR (up to 128 MiB).</small></label>
+                <div class="field-row"><label class="field"><span>SERVER PORT</span><input id="host-port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>MAX MEMORY</span><select id="host-memory"><option value="1024">1 GiB</option><option value="2048" selected>2 GiB</option><option value="4096">4 GiB</option></select></label></div>
+                <label class="host-eula"><input id="host-eula" type="checkbox" required /><span>I have read and agree to the <a href="https://www.minecraft.net/eula" target="_blank" rel="noreferrer">Minecraft EULA</a>.</span></label>
+                <div class="server-warning"><span>!</span><p>A server JAR executes code on this computer. Only run a file you trust. Blockcraft stores it in your private <code>.blockcraft/hosted-server</code> folder, starts Java with the selected memory limit, and does not modify your browser world.</p></div>
+                <button class="primary-button connect-button" type="submit" id="host-start-button"><span class="button-icon">⌁</span><span><b>Start LAN server</b><small>Run this Java server on this PC</small></span><span class="button-arrow">↗</span></button>
+              </form>
+              <div class="host-console hidden" id="host-console">
+                <div class="host-console-heading"><div><span class="host-status-light"></span><b id="host-console-status">Server starting…</b></div><button type="button" class="disconnect-button" id="host-stop-button">Stop server</button></div>
+                <p id="host-address-note">Other computers on your LAN can join using one of the addresses below.</p>
+                <div class="host-addresses" id="host-addresses"></div>
+                <pre class="host-log" id="host-log" aria-live="polite"></pre>
+              </div>
+              <p class="host-network-note">This hosts on the computer running Node. Friends on your LAN may need the OS firewall to allow Java. Public internet access is not automatic: router port-forwarding and firewall configuration are separate, and Arena previews do not expose a Minecraft port.</p>
+            </div>
           </div>
         </section>
 
@@ -134,6 +160,7 @@
             <label class="setting-row"><span><b>Render distance</b><small>Blocks in your local world</small></span><div class="range-wrap"><input id="distance-setting" type="range" min="24" max="64" step="8" value="48"><b id="distance-value">48</b></div></label>
             <label class="setting-row"><span><b>Pixel outlines</b><small>Give blocks a crisp edge</small></span><input class="toggle" id="outline-setting" type="checkbox" checked></label>
             <label class="setting-row"><span><b>Show coordinates</b><small>Display your position</small></span><input class="toggle" id="coords-setting" type="checkbox" checked></label>
+            <label class="setting-row"><span><b>Difficulty</b><small>Changes hostile mob damage and spawns</small></span><select id="difficulty-setting" class="difficulty-select"><option value="peaceful">Peaceful</option><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></label>
             <div class="settings-note"><span>✦</span><p>Settings are saved automatically. The local world runs entirely in your browser.</p></div>
           </div></div>
         </section>
