@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdirSync, existsSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import mineflayer from 'mineflayer';
+import minecraftData from 'minecraft-data';
 import { Vec3 } from 'vec3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,227 @@ let state = {
 app.use(express.json({ limit: '32kb' }));
 app.disable('x-powered-by');
 
+const gameDataCache = new Map();
+const itemMetadataLabels = {
+  dye: ['Ink Sac', 'Rose Red', 'Cactus Green', 'Cocoa Beans', 'Lapis Lazuli', 'Purple Dye', 'Cyan Dye', 'Light Gray Dye', 'Gray Dye', 'Pink Dye', 'Lime Dye', 'Dandelion Yellow', 'Light Blue Dye', 'Magenta Dye', 'Orange Dye', 'Bone Meal'],
+  coal: ['Coal', 'Charcoal'],
+  fish: ['Raw Fish', 'Raw Salmon', 'Clownfish', 'Pufferfish'],
+  cooked_fish: ['Cooked Fish', 'Cooked Salmon'],
+  golden_apple: ['Golden Apple', 'Enchanted Golden Apple'],
+  skull: ['Skeleton Skull', 'Wither Skeleton Skull', 'Zombie Head', 'Player Head', 'Creeper Head', 'Dragon Head'],
+};
+const blockMetadataOverrides = {
+  stone: ['Stone', 'Granite', 'Polished Granite', 'Diorite', 'Polished Diorite', 'Andesite', 'Polished Andesite'],
+  sapling: ['Oak Sapling', 'Spruce Sapling', 'Birch Sapling', 'Jungle Sapling', 'Acacia Sapling', 'Dark Oak Sapling'],
+};
+const blockMetadataIndexes = {
+  log: [0, 1, 2, 3], log2: [0, 1], leaves: [0, 1, 2, 3], leaves2: [0, 1],
+  double_plant: [0, 1, 2, 3, 4, 5], wooden_slab: [0, 1, 2, 3, 4, 5],
+  stone_slab: [0, 1, 2, 3, 4, 5, 6, 7], quartz_block: [0, 1, 2],
+};
+const hiddenBlockItems = new Set(['air', 'flowing_water', 'flowing_lava', 'fire', 'portal', 'end_portal', 'end_gateway', 'piston_head', 'moving_piston', 'structure_void']);
+const legacyColorTints = ['#e6ddc9', '#ec8845', '#b75fb5', '#6c9bd1', '#e5c943', '#72b846', '#d981a1', '#4c5157', '#a39e8f', '#328d96', '#8650aa', '#40559d', '#77533a', '#5d7d39', '#b7423f', '#242326'];
+const colorVariantBlocks = new Set(['wool', 'stained_glass', 'stained_glass_pane', 'stained_hardened_clay', 'carpet', 'concrete', 'concrete_powder']);
+
+function gameItemCategory(name) {
+  const value = String(name || '').toLowerCase();
+  if (value.includes('water') || value.includes('lava')) return 'water';
+  if (value.includes('glass') || value.includes('ice')) return 'glass';
+  if (value.includes('wool') || value.includes('concrete') || value.includes('terracotta') || value.includes('dye')) return 'wool';
+  if (value.includes('tnt')) return 'tnt';
+  if (value.includes('bookshelf') || value.includes('book')) return 'book';
+  if (value.includes('crafting_table')) return 'craft';
+  if (value.includes('leaves') || value.includes('vine') || value.includes('sapling') || value.includes('flower') || value.includes('mushroom') || value.includes('cactus') || value.includes('sugar_cane')) return 'leaves';
+  if (value.includes('grass') || value.includes('mycelium') || value.includes('podzol')) return 'grass';
+  if (value.includes('dirt') || value.includes('mud') || value.includes('clay')) return 'dirt';
+  if (value.includes('sand') || value.includes('gravel') || value.includes('snow')) return 'sand';
+  if (/(sword|pickaxe|axe|shovel|hoe|shears|helmet|chestplate|leggings|boots|bow|arrow|shield)/.test(value)) return 'tool';
+  if (/(beef|pork|chicken|mutton|rabbit|fish|apple|bread|carrot|potato|melon|pie|stew|cookie|beetroot|rotten_flesh|cake|golden_apple)/.test(value)) return 'food';
+  if (value.includes('potion') || value.includes('brewing') || value.includes('experience_bottle')) return 'magic';
+  if (value.includes('plank')) return 'planks';
+  if (value.includes('log') || value.includes('wood') || value.includes('stem') || value.includes('hyphae') || value.includes('door') || value.includes('fence')) return 'wood';
+  if (value.includes('ore') || value.includes('coal') || value.includes('diamond') || value.includes('iron_ingot') || value.includes('gold_ingot') || value.includes('emerald')) return 'ore';
+  if (value.includes('torch') || value.includes('glowstone') || value.includes('redstone_lamp') || value.includes('fire_charge')) return 'torch';
+  if (value.includes('brick')) return 'brick';
+  if (value.includes('stone') || value.includes('cobble') || value.includes('andesite') || value.includes('granite') || value.includes('diorite')) return 'stone';
+  if (value.includes('stick') || value.includes('ladder') || value.includes('boat') || value.includes('sign')) return 'wood';
+  return 'stone';
+}
+
+function buildGameData(version) {
+  if (gameDataCache.has(version)) return gameDataCache.get(version);
+  const data = minecraftData(version);
+  if (!data) throw new Error(`Game data for Minecraft ${version} is unavailable.`);
+  const catalog = [];
+  const keyByIdMetadata = new Map();
+  const keysById = new Map();
+  const addCatalogEntry = (entry) => {
+    if (catalog.some((item) => item.name === entry.name)) return;
+    catalog.push(entry);
+    if (Number.isInteger(entry.id)) {
+      const list = keysById.get(entry.id) || [];
+      if (!list.includes(entry.name)) list.push(entry.name);
+      keysById.set(entry.id, list);
+      keyByIdMetadata.set(`${entry.id}:${entry.metadata}`, entry.name);
+    }
+  };
+
+  for (const block of data.blocksArray) {
+    if (block.name === 'air') continue;
+    const itemData = data.itemsByName[block.name];
+    const itemId = itemData?.id;
+    const overrideLabels = blockMetadataOverrides[block.name];
+    const permittedMetadata = blockMetadataIndexes[block.name];
+    let variants;
+    if (overrideLabels) variants = overrideLabels.map((displayName, metadata) => ({ metadata, displayName }));
+    else if (itemData?.variations?.length) variants = itemData.variations;
+    else if (permittedMetadata) variants = permittedMetadata.map((metadata) => ({
+      metadata,
+      displayName: block.variations?.find((variant) => variant.metadata === metadata)?.displayName || `${block.displayName} ${metadata}`,
+    }));
+    else variants = block.variations?.length ? block.variations : [{ metadata: 0, displayName: block.displayName }];
+    for (const variant of variants) {
+      const metadata = Number.isInteger(variant.metadata) ? variant.metadata : 0;
+      const name = metadata === 0 ? block.name : `${block.name}@${metadata}`;
+      const rawDrop = block.drops?.[0]?.drop ?? null;
+      const dropId = rawDrop && typeof rawDrop === 'object' ? rawDrop.id : rawDrop;
+      const dropMetadata = rawDrop && typeof rawDrop === 'object'
+        ? (rawDrop.metadata ?? block.drops?.[0]?.metadata ?? metadata)
+        : (block.drops?.[0]?.metadata ?? metadata);
+      addCatalogEntry({
+        name,
+        label: variant.displayName || block.displayName,
+        icon: gameItemCategory(block.name),
+        category: gameItemCategory(block.name),
+        kind: 'block',
+        blockName: block.name,
+        tint: colorVariantBlocks.has(block.name) ? legacyColorTints[metadata % legacyColorTints.length] : null,
+        id: Number.isInteger(itemId) ? itemId : null,
+        metadata,
+        placeable: !hiddenBlockItems.has(block.name),
+        hardness: block.hardness,
+        dropId,
+        dropMetadata,
+        harvestTools: block.harvestTools || null,
+      });
+    }
+  }
+
+  for (const item of data.itemsArray) {
+    const blockItem = data.blocksByName[item.name];
+    if (blockItem && data.itemsByName[item.name]?.id === item.id) continue;
+    const variants = itemMetadataLabels[item.name] || item.variations?.map((variant) => variant.displayName);
+    if (variants?.length) {
+      for (let metadata = 0; metadata < variants.length; metadata += 1) {
+        addCatalogEntry({
+          name: metadata === 0 ? `item:${item.name}` : `item:${item.name}@${metadata}`,
+          label: variants[metadata],
+          icon: gameItemCategory(item.name),
+          category: gameItemCategory(item.name),
+          kind: 'item',
+          itemName: item.name,
+          id: item.id,
+          metadata,
+          placeable: false,
+        });
+      }
+    } else {
+      addCatalogEntry({
+        name: `item:${item.name}`,
+        label: item.displayName,
+        icon: gameItemCategory(item.name),
+        category: gameItemCategory(item.name),
+        kind: 'item',
+        itemName: item.name,
+        id: item.id,
+        metadata: 0,
+        placeable: false,
+      });
+    }
+  }
+
+  const resolveItemKey = (id, metadata = 0) => {
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId)) return null;
+    const exact = keyByIdMetadata.get(`${numericId}:${metadata}`);
+    if (exact) return exact;
+    if (metadata === -1) return keysById.get(numericId)?.[0] || null;
+    return keyByIdMetadata.get(`${numericId}:0`) || keysById.get(numericId)?.[0] || null;
+  };
+  for (const entry of catalog) {
+    if (entry.kind !== 'block' || !Number.isInteger(entry.dropId)) continue;
+    entry.drop = resolveItemKey(entry.dropId, Number.isInteger(entry.dropMetadata) ? entry.dropMetadata : 0);
+  }
+
+  const normalizeCandidates = (value) => {
+    if (value === null || value === undefined) return [];
+    if (Array.isArray(value)) return value.flatMap(normalizeCandidates);
+    const id = typeof value === 'number' ? value : value.id;
+    const metadata = typeof value === 'object' && Number.isInteger(value.metadata) ? value.metadata : 0;
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) return [];
+    if (metadata === -1) return (keysById.get(numericId) || []).map((key) => ({ key, id: numericId }));
+    const key = resolveItemKey(numericId, metadata);
+    return key ? [{ key, id: numericId, metadata }] : [];
+  };
+  const recipes = [];
+  for (const group of Object.values(data.recipes || {})) {
+    for (const recipe of group) {
+      const outputKey = resolveItemKey(recipe.result?.id, recipe.result?.metadata ?? 0);
+      if (!outputKey) continue;
+      const rawSlots = Array.isArray(recipe.ingredients)
+        ? recipe.ingredients
+        : (recipe.inShape || []).flatMap((row) => Array.isArray(row) ? row : [row]);
+      const inputs = rawSlots.map((slot) => ({
+        alternatives: normalizeCandidates(slot).map((candidate) => candidate.key),
+      })).filter((slot) => slot.alternatives.length);
+      if (!inputs.length) continue;
+      const output = catalog.find((item) => item.name === outputKey);
+      recipes.push({
+        name: `${output?.label || outputKey}${recipe.result.count > 1 ? ` ×${recipe.result.count}` : ''}`,
+        output: outputKey,
+        count: Number(recipe.result.count) || 1,
+        inputs,
+      });
+    }
+  }
+
+  const catalogNames = new Set(catalog.map((item) => item.name));
+  const rawSmeltingRecipes = [
+    ['iron_ore', 'item:iron_ingot'], ['gold_ore', 'item:gold_ingot'], ['sand', 'glass'],
+    ['cobblestone', 'stone'], ['item:clay_ball', 'item:brick'], ['item:beef', 'item:cooked_beef'],
+    ['item:porkchop', 'item:cooked_porkchop'], ['item:chicken', 'item:cooked_chicken'],
+    ['item:fish', 'item:cooked_fish'], ['item:fish@1', 'item:cooked_fish@1'],
+    ['item:potato', 'item:baked_potato'], ['cactus', 'item:dye@2'],
+    ['log', 'item:coal@1'], ['log@1', 'item:coal@1'], ['log@2', 'item:coal@1'], ['log@3', 'item:coal@1'],
+    ['log2', 'item:coal@1'], ['log2@1', 'item:coal@1'], ['netherrack', 'item:netherbrick'],
+  ];
+  const fuelKeys = ['item:coal', 'item:coal@1', 'item:blaze_rod', 'item:lava_bucket', 'item:stick', 'planks', 'log', 'log@1', 'log@2', 'log@3']
+    .filter((key) => catalogNames.has(key));
+  const smelting = rawSmeltingRecipes.filter(([input, output]) => catalogNames.has(input) && catalogNames.has(output) && fuelKeys.length)
+    .map(([input, output]) => {
+      const item = catalog.find((entry) => entry.name === output);
+      return {
+        name: `Smelt: ${catalog.find((entry) => entry.name === input)?.label || input} → ${item?.label || output}`,
+        output,
+        count: 1,
+        kind: 'smelt',
+        fuel: fuelKeys,
+        inputs: [{ alternatives: [input] }],
+      };
+    });
+  const result = {
+    version,
+    blocks: data.blocksArray.length,
+    itemTypes: data.itemsArray.length,
+    catalog,
+    recipes,
+    smelting,
+  };
+  gameDataCache.set(version, result);
+  return result;
+}
+
 function send(client, payload) {
   if (client?.readyState === WebSocket.OPEN) {
     try { client.send(JSON.stringify(payload)); } catch { /* A closing tab is harmless. */ }
@@ -59,6 +281,34 @@ function pushChat(text, kind = 'message') {
   const cleanText = String(text ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, 600);
   if (!cleanText) return;
   broadcast({ type: 'chat', text: cleanText, kind, at: Date.now() });
+}
+
+function flattenTextComponent(value, depth = 0) {
+  if (depth > 8 || value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try { return flattenTextComponent(JSON.parse(trimmed), depth + 1); } catch { /* Keep non-JSON kick strings as text. */ }
+    }
+    return value
+      .replace(/(?:In)+(?=§)/g, String.fromCharCode(10))
+      .replace(/§./g, '')
+      .trim();
+  }
+  if (Array.isArray(value)) return value.map((part) => flattenTextComponent(part, depth + 1)).join('');
+  if (typeof value === 'object') {
+    const text = typeof value.text === 'string' ? value.text : (typeof value.message === 'string' ? value.message : '');
+    const extra = Array.isArray(value.extra) ? value.extra : [];
+    const translated = typeof value.translate === 'string' && !text ? value.translate : '';
+    return `${flattenTextComponent(text || translated, depth + 1)}${extra.map((part) => flattenTextComponent(part, depth + 1)).join('')}`.trim();
+  }
+  return String(value);
+}
+
+function readableEndReason(reason) {
+  const message = flattenTextComponent(reason);
+  if (!message || /^(?:socketclosed|socket closed)$/i.test(message)) return '';
+  return message.slice(0, 1000);
 }
 
 function inventoryPayload() {
@@ -181,6 +431,18 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, name: 'Blockcraft server bridge', status: state.status });
 });
 
+app.get('/api/game-data', (req, res) => {
+  const version = String(req.query.version || '1.12.2');
+  if (version !== '1.12.2') return res.status(404).json({ error: 'The local game catalog currently supports Minecraft Java 1.12.2 only.' });
+  try {
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json(buildGameData(version));
+  } catch (error) {
+    console.error('Could not load Minecraft game data:', error);
+    res.status(500).json({ error: 'Could not load the Minecraft 1.12.2 catalog.' });
+  }
+});
+
 app.get('/api/server/status', (_req, res) => {
   res.json({ ...state, position: state.position ? { ...state.position } : null });
 });
@@ -207,6 +469,8 @@ app.post('/api/server/connect', (req, res) => {
   sendState();
 
   try {
+    let kickReason = '';
+    let connectionError = '';
     const options = {
       host,
       port: gamePort,
@@ -268,32 +532,40 @@ app.post('/api/server/connect', (req, res) => {
 
     activeBot.on('error', (error) => {
       if (token !== sessionToken) return;
-      const message = String(error?.message || error || 'Unknown connection error').slice(0, 240);
-      state.error = message;
+      connectionError = flattenTextComponent(error?.message || error || 'Unknown connection error').slice(0, 1000);
+      state.error = connectionError;
       state.status = 'error';
       sendState();
-      pushChat(`Connection error: ${message}`, 'error');
     });
 
     activeBot.on('kicked', (reason) => {
       if (token !== sessionToken) return;
-      const message = typeof reason === 'string' ? reason : JSON.stringify(reason);
-      state.error = String(message).slice(0, 240);
+      kickReason = flattenTextComponent(reason) || 'The server rejected the connection.';
+      state.error = kickReason.slice(0, 1000);
       state.status = 'error';
       sendState();
-      pushChat(`Kicked: ${state.error}`, 'error');
     });
 
     activeBot.on('end', (reason) => {
       if (token !== sessionToken) return;
       const wasConnecting = state.status === 'connecting' || state.status === 'auth';
-      state.status = wasConnecting ? 'error' : 'disconnected';
-      state.error = String(reason || (wasConnecting ? 'Connection closed before joining.' : 'Connection closed.')).slice(0, 240);
+      const previousError = kickReason || connectionError || state.error;
+      const endReason = readableEndReason(reason);
+      if (previousError) {
+        state.status = 'error';
+        state.error = previousError.slice(0, 1000);
+      } else if (wasConnecting) {
+        state.status = 'error';
+        state.error = endReason || 'Connection ended before login. Check the address, version, and account mode.';
+      } else {
+        state.status = 'disconnected';
+        state.error = endReason;
+      }
       if (snapshotTimer) clearInterval(snapshotTimer);
       snapshotTimer = null;
       bot = null;
       sendState();
-      pushChat(state.error, wasConnecting ? 'error' : 'notice');
+      if (state.error && !previousError) pushChat(state.error, wasConnecting ? 'error' : 'notice');
     });
 
     res.json({ ok: true, status: 'connecting' });
