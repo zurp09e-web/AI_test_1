@@ -186,6 +186,35 @@ body.server-mode #hud, body.server-mode #bottom-hud, body.server-mode .quick-tip
 body.server-mode #menu-screen,body.server-mode #pause-screen { display:none!important; }
 body.pointer-locked .crosshair { opacity:1; }
 
+.server-card { width:min(520px,100%); }
+.server-tabs { display:flex; gap:4px; margin:-4px 0 14px; padding:3px; border:1px solid rgba(230,243,222,.11); border-radius:6px; background:rgba(9,17,13,.32); }
+.server-tabs button { flex:1; min-height:31px; border:0; border-radius:4px; background:transparent; color:#94a391; font-size:9px; cursor:pointer; }
+.server-tabs button.active { background:rgba(173,207,144,.14); color:#dcebd0; box-shadow:inset 0 0 0 1px rgba(190,220,163,.14); }
+.server-tab-panel { min-width:0; }
+.host-intro { margin:0 0 13px; color:#a8b3a6; font-size:10px; line-height:1.55; }
+.host-runtime-status { display:flex; align-items:center; gap:8px; margin:0 0 12px; padding:9px 10px; border:1px solid rgba(203,222,189,.13); border-radius:5px; background:rgba(229,242,218,.035); color:#cbd8c5; font-size:9px; line-height:1.45; }
+.host-status-light { display:inline-block; width:7px; height:7px; flex:none; border-radius:50%; background:#d4bb70; box-shadow:0 0 8px rgba(212,187,112,.44); }
+.host-runtime-status.status-running .host-status-light,.host-console-heading .host-status-light { background:#9cc77c; box-shadow:0 0 9px rgba(156,199,124,.52); }
+.host-runtime-status.status-error .host-status-light { background:#d98677; box-shadow:0 0 9px rgba(217,134,119,.45); }
+.host-runtime-status.status-stopped .host-status-light { background:#829381; box-shadow:none; }
+.host-runtime-status.status-stopping .host-status-light { background:#d4a970; }
+#host-jar-file { height:auto; min-height:39px; padding:7px; font:9px 'DM Sans',sans-serif; }
+#host-jar-file::file-selector-button { margin-right:8px; padding:5px 8px; border:1px solid rgba(207,228,191,.18); border-radius:4px; background:rgba(184,216,156,.1); color:#d8e7cd; font-size:9px; cursor:pointer; }
+.host-eula { display:flex; align-items:flex-start; gap:8px; color:#c2cbbf; font-size:9px; line-height:1.45; letter-spacing:0; }
+.host-eula input { flex:none; margin:1px 0 0; accent-color:#a8cb89; }
+.host-eula a { color:#d2e7b8; }
+.server-warning code { color:#e3dfc2; font:8px var(--mono); }
+.connect-button:disabled { opacity:.48; cursor:not-allowed; transform:none; }
+.host-console { margin-top:13px; padding:10px; border:1px solid rgba(210,232,194,.12); border-radius:6px; background:rgba(8,15,11,.28); }
+.host-console-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.host-console-heading > div { display:flex; align-items:center; gap:7px; color:#dce8d5; font-size:10px; }
+.host-console-heading .disconnect-button:disabled { opacity:.45; cursor:not-allowed; }
+.host-console p { margin:8px 0 7px; color:#9aa897; font-size:9px; line-height:1.45; }
+.host-addresses { display:flex; flex-wrap:wrap; gap:5px; }
+.host-addresses code { padding:4px 6px; border:1px solid rgba(194,220,174,.14); border-radius:4px; background:rgba(182,216,154,.07); color:#d6e7c6; font:9px var(--mono); user-select:all; }
+.host-log { max-height:170px; overflow:auto; margin:9px 0 0; padding:8px; border-radius:4px; background:rgba(0,0,0,.25); color:#afbeaa; font:8px/1.5 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+.host-network-note { margin:12px 0 0; color:#829084; font-size:8px; line-height:1.55; }
+
 @media (max-width: 780px) {
   .topbar { height:66px;padding:0 17px; }.world-meta { display:none; }.hud { left:17px;top:82px; }.compass-card { width:142px; }.quick-tip { display:none; }.bottom-hud { width:min(600px,95vw);bottom:18px;gap:5px; }.hotbar { gap:2px;padding:4px; }.hotbar-slot { width:min(48px,9.1vw);height:49px; }.block-icon { width:22px;height:22px; }.hand-note { display:none; }.xp-area { margin-bottom:62px; }.watermark { left:12px;bottom:9px; }.server-chat { right:12px;bottom:82px;width:min(285px,calc(100% - 24px)); }.server-banner { top:9px; }.server-coords { display:none; }.remote-hint { top:70px; }.menu-content { width:100%;min-width:0;max-width:none;padding:70px 30px 22px; }.menu-content h1 { font-size:64px;margin-top:35px; }.menu-art { width:63%;opacity:.36; }.menu-backdrop { background:linear-gradient(90deg,#17231f 0%,rgba(23,35,31,.9) 49%,rgba(29,44,37,.6) 100%); }.menu-foot { margin-top:auto; }.menu-buttons { max-width:380px; }.art-label { display:none; }
 }

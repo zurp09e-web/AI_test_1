@@ -89,6 +89,10 @@ const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 const mobGroup = new THREE.Group();
 scene.add(mobGroup);
+const remoteEntityGroup = new THREE.Group();
+remoteEntityGroup.visible = false;
+scene.add(remoteEntityGroup);
+const remoteEntities = new Map();
 const mobs = [];
 const targetOutline = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(1.025, 1.025, 1.025)),
@@ -218,6 +222,30 @@ function makeTexture(base, accent, pattern = 'noise', seed = 1) {
       ctx.fillStyle = i % 2 ? '#aa7954' : '#cf9a67';
       ctx.fillRect(r % 15, (r >>> 9) % 15, 2, 2);
     }
+  } else if (pattern === 'cobble') {
+    for (let i = 0; i < 13; i += 1) {
+      const r = hash32(i, seed, 37, seed);
+      const x = r % 13;
+      const y = (r >>> 8) % 13;
+      const width = 3 + ((r >>> 16) % 3);
+      const height = 2 + ((r >>> 21) % 3);
+      ctx.fillStyle = i % 2 ? '#9ca096' : '#61675f';
+      ctx.fillRect(x, y, width, height);
+      ctx.fillStyle = 'rgba(230,232,218,.28)';
+      ctx.fillRect(x, y, width, 1);
+      ctx.fillStyle = 'rgba(35,41,37,.42)';
+      ctx.fillRect(x, y + height - 1, width, 1);
+    }
+  } else if (pattern === 'masonry') {
+    ctx.fillStyle = 'rgba(50,57,54,.55)';
+    for (let y = 0; y < 16; y += 5) {
+      ctx.fillRect(0, y, 16, 1);
+      const offset = Math.floor(y / 5) % 2 ? 0 : 7;
+      for (let x = offset; x < 16; x += 8) ctx.fillRect(x, y, 1, 5);
+    }
+    ctx.fillStyle = 'rgba(237,236,220,.25)';
+    ctx.fillRect(1, 1, 5, 1);
+    ctx.fillRect(9, 6, 5, 1);
   } else if (pattern === 'brick') {
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#e1b68f';
@@ -254,6 +282,8 @@ const textureSets = {
   grassSide: makeTexture('#70583b', '#94724d', 'noise', 4),
   dirt: makeTexture('#806145', '#bc9161', 'noise', 5),
   stone: makeTexture('#858b81', '#c4c8b6', 'noise', 7),
+  cobble: makeTexture('#73796f', '#aeb1a3', 'cobble', 29),
+  masonry: makeTexture('#99998c', '#d1cebd', 'masonry', 30),
   ore: makeTexture('#777b70', '#aeaa91', 'ore', 8),
   woodSide: makeTexture('#916c43', '#c69b5f', 'grain', 9),
   woodTop: makeTexture('#b28b58', '#d8b975', 'log-top', 11),
@@ -278,6 +308,8 @@ function materialsFor(category) {
   if (category === 'grass') result = [mat(textureSets.grassSide), mat(textureSets.grassSide), mat(textureSets.grassTop), mat(textureSets.dirt), mat(textureSets.grassSide), mat(textureSets.grassSide)];
   else if (category === 'dirt') result = mat(textureSets.dirt);
   else if (category === 'stone') result = mat(textureSets.stone);
+  else if (category === 'cobble') result = mat(textureSets.cobble);
+  else if (category === 'masonry') result = mat(textureSets.masonry);
   else if (category === 'ore') result = mat(textureSets.ore);
   else if (category === 'wood') result = [mat(textureSets.woodSide), mat(textureSets.woodSide), mat(textureSets.woodTop), mat(textureSets.woodTop), mat(textureSets.woodSide), mat(textureSets.woodSide)];
   else if (category === 'leaves') result = mat(textureSets.leaves, { color: 0xffffff, transparent: true, opacity: 0.94, alphaTest: 0.02 });
@@ -310,9 +342,10 @@ function visualCategory(blockName) {
   if (name.includes('sand') || name.includes('gravel') || name.includes('snow')) return 'sand';
   if (name.includes('log') || name.includes('wood') || name.includes('stem') || name.includes('hyphae')) return 'wood';
   if (name.includes('planks') || name.includes('bamboo_block')) return 'planks';
+  if (name.includes('cobble')) return 'cobble';
+  if (name.includes('stonebrick') || name.includes('stone_brick')) return 'masonry';
   if (name.includes('ore') || name.includes('raw_')) return 'ore';
   if (name.includes('torch') || name.includes('lantern') || name.includes('candle') || name.includes('glowstone')) return 'torch';
-  if (name.includes('stone_brick')) return 'stone';
   if (name.includes('brick') || name.includes('terracotta')) return 'brick';
   if (name.includes('stone') || name.includes('deepslate') || name.includes('cobble') || name.includes('andesite') || name.includes('granite') || name.includes('diorite') || name.includes('basalt')) return 'stone';
   return 'stone';
@@ -409,6 +442,10 @@ let remoteHotbar = Array.from({ length: 9 }, () => null);
 let remoteSelected = 0;
 let remoteSocket = null;
 let remoteSession = null;
+let hostControlToken = null;
+let hostStatusPolling = null;
+let hostStatusBusy = false;
+let hostStatusCache = null;
 let pointerLocked = false;
 let lastFrame = performance.now();
 let frameCount = 0;
@@ -611,8 +648,25 @@ const mobPalette = {
   horse: { body: 0x8a6242, head: 0xa27a59, leg: 0x4c3a2e },
   villager: { body: 0x886b52, head: 0xc39e75, leg: 0x5b4c43 },
   squid: { body: 0x454b86, head: 0x606bb3, leg: 0x373c70 },
+  llama: { body: 0xc8ad86, head: 0xd3bb97, leg: 0x9b8060 },
+  donkey: { body: 0x796c5b, head: 0x91816c, leg: 0x554c43 },
+  mule: { body: 0x80694f, head: 0x967b5e, leg: 0x574535 },
+  polar_bear: { body: 0xe4e2d5, head: 0xf0eee3, leg: 0xb5b7ae },
+  mooshroom: { body: 0xa64c42, head: 0xc07769, leg: 0x754d41 },
+  parrot: { body: 0x37a56d, head: 0xe3bf41, leg: 0xa44d3c },
+  bat: { body: 0x4f3f4d, head: 0x6c5666, leg: 0x352d37 },
 };
-function mobMaterial(color) { return new THREE.MeshStandardMaterial({ color, roughness: 0.88, flatShading: true }); }
+const mobMaterialCache = new Map();
+function mobMaterial(color) {
+  const key = Number(color) >>> 0;
+  if (!mobMaterialCache.has(key)) {
+    const base = `#${new THREE.Color(key).getHexString()}`;
+    const accent = `#${new THREE.Color(key).lerp(new THREE.Color(0xffffff), 0.24).getHexString()}`;
+    const texture = makeTexture(base, accent, 'noise', key);
+    mobMaterialCache.set(key, new THREE.MeshStandardMaterial({ map: texture, roughness: 0.88, flatShading: true }));
+  }
+  return mobMaterialCache.get(key);
+}
 function addMobPart(group, size, position, material, mob, legs = false) {
   const part = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   part.position.set(...position);
@@ -623,7 +677,7 @@ function addMobPart(group, size, position, material, mob, legs = false) {
   group.add(part);
   return part;
 }
-function createMobMesh(mob) {
+function createMobMesh(mob, targetGroup = mobGroup) {
   const palette = mobPalette[mob.type] || mobPalette.pig;
   const group = new THREE.Group();
   mob.legs = [];
@@ -631,21 +685,23 @@ function createMobMesh(mob) {
   const head = mobMaterial(palette.head);
   const leg = mobMaterial(palette.leg);
   const dark = mobMaterial(mob.type === 'creeper' ? 0x183b2a : 0x493c32);
-  if (['pig', 'cow', 'sheep', 'chicken', 'rabbit', 'wolf', 'ocelot', 'horse', 'squid'].includes(mob.type)) {
+  if (['pig', 'cow', 'sheep', 'chicken', 'rabbit', 'wolf', 'ocelot', 'horse', 'squid', 'llama', 'donkey', 'mule', 'polar_bear', 'mooshroom', 'parrot', 'bat'].includes(mob.type)) {
     const chicken = mob.type === 'chicken';
+    const bird = ['chicken', 'parrot', 'bat'].includes(mob.type);
     const rabbit = mob.type === 'rabbit';
-    const horse = mob.type === 'horse';
+    const horse = ['horse', 'llama', 'donkey', 'mule'].includes(mob.type);
     const squid = mob.type === 'squid';
-    const bodySize = chicken ? [0.48, 0.5, 0.55] : (rabbit ? [0.44, 0.42, 0.62] : (horse ? [0.9, 0.9, 1.35] : (squid ? [0.7, 0.75, 0.7] : [0.78, 0.68, 1.05])));
-    addMobPart(group, bodySize, chicken ? [0, 0.49, 0] : [0, rabbit ? 0.42 : (horse ? 0.81 : 0.65), 0], body, mob);
-    addMobPart(group, chicken ? [0.34, 0.34, 0.35] : [0.43, 0.42, 0.42], chicken ? [0, 0.82, -0.29] : [0, rabbit ? 0.7 : (horse ? 1.35 : 0.77), -0.58], head, mob);
+    const polarBear = mob.type === 'polar_bear';
+    const bodySize = bird ? [0.48, 0.5, 0.55] : (rabbit ? [0.44, 0.42, 0.62] : (horse ? [0.9, 0.9, mob.type === 'llama' ? 1.1 : 1.35] : (squid ? [0.7, 0.75, 0.7] : (polarBear ? [0.92, 0.82, 1.15] : [0.78, 0.68, 1.05]))));
+    addMobPart(group, bodySize, bird ? [0, 0.49, 0] : [0, rabbit ? 0.42 : (horse ? 0.81 : 0.65), 0], body, mob);
+    addMobPart(group, chicken ? [0.34, 0.34, 0.35] : (bird ? [0.38, 0.38, 0.38] : [0.43, 0.42, 0.42]), bird ? [0, 0.82, -0.29] : [0, rabbit ? 0.7 : (horse ? 1.35 : 0.77), -0.58], head, mob);
     if (mob.type === 'pig' || mob.type === 'cow') addMobPart(group, [0.29, 0.2, 0.15], [0, 0.68, -0.8], mobMaterial(mob.type === 'pig' ? 0xc66f73 : 0x754e38), mob);
     if (mob.type === 'chicken') addMobPart(group, [0.12, 0.12, 0.2], [0, 0.75, -0.48], mobMaterial(0xe7a735), mob);
-    const legSize = chicken ? [0.1, 0.28, 0.1] : [0.18, 0.43, 0.2];
+    const legSize = bird ? [0.1, 0.28, 0.1] : [0.18, 0.43, 0.2];
     for (const x of [-0.24, 0.24]) for (const z of [-0.34, 0.34]) {
-      addMobPart(group, legSize, [x, chicken ? 0.16 : 0.22, z], leg, mob, true);
+      addMobPart(group, legSize, [x, bird ? 0.16 : 0.22, z], leg, mob, true);
     }
-    if (mob.type === 'cow') {
+    if (mob.type === 'cow' || mob.type === 'mooshroom') {
       addMobPart(group, [0.12, 0.17, 0.12], [-0.26, 0.9, -0.65], mobMaterial(0xd8cfb7), mob);
       addMobPart(group, [0.12, 0.17, 0.12], [0.26, 0.9, -0.65], mobMaterial(0xd8cfb7), mob);
     }
@@ -689,8 +745,188 @@ function createMobMesh(mob) {
   group.position.set(mob.x + 0.5, mob.y, mob.z + 0.5);
   group.userData.mob = mob;
   mob.mesh = group;
-  mobGroup.add(group);
+  targetGroup.add(group);
+  return group;
 }
+
+const remotePlayerMaterials = new Map();
+function remotePlayerMaterial(username, part) {
+  const cacheKey = `${username || 'Player'}:${part}`;
+  if (remotePlayerMaterials.has(cacheKey)) return remotePlayerMaterials.get(cacheKey);
+  let seed = 0;
+  for (const character of String(username || 'Player')) seed = (Math.imul(seed, 31) + character.charCodeAt(0)) >>> 0;
+  const shirts = ['#4f7b58', '#52718e', '#8b5d54', '#a37c45', '#6f5d8c', '#407c7c'];
+  const trousers = ['#344c83', '#4a535b', '#6a4e39', '#3f6948'];
+  const skins = ['#c58c64', '#dfad7e', '#a96f50', '#e0bd91'];
+  const base = part === 'head' ? skins[seed % skins.length] : (part === 'legs' ? trousers[seed % trousers.length] : shirts[seed % shirts.length]);
+  const accent = part === 'head' ? '#5b4031' : '#e0d1a5';
+  const image = document.createElement('canvas');
+  image.width = 16;
+  image.height = 16;
+  const context = image.getContext('2d');
+  context.fillStyle = base;
+  context.fillRect(0, 0, 16, 16);
+  for (let index = 0; index < 36; index += 1) {
+    const value = hash32(index, seed, part.length, seed);
+    context.globalAlpha = 0.12 + ((value >>> 16) % 4) * 0.07;
+    context.fillStyle = value & 1 ? accent : '#ffffff';
+    context.fillRect(value % 16, (value >>> 8) % 16, 1 + ((value >>> 4) % 2), 1);
+  }
+  context.globalAlpha = 1;
+  if (part === 'head') {
+    context.fillStyle = '#493327';
+    context.fillRect(0, 0, 16, 4);
+    context.fillRect(0, 3, 2, 5);
+    context.fillRect(14, 3, 2, 5);
+    context.fillStyle = '#f0e7ce';
+    context.fillRect(4, 7, 2, 2);
+    context.fillRect(10, 7, 2, 2);
+    context.fillStyle = '#293337';
+    context.fillRect(5, 7, 1, 1);
+    context.fillRect(11, 7, 1, 1);
+    context.fillStyle = '#8a5147';
+    context.fillRect(7, 11, 2, 1);
+  }
+  const texture = new THREE.CanvasTexture(image);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.9, flatShading: true });
+  remotePlayerMaterials.set(cacheKey, material);
+  return material;
+}
+
+function makePlayerNameTag(username) {
+  const image = document.createElement('canvas');
+  image.width = 256;
+  image.height = 48;
+  const context = image.getContext('2d');
+  context.fillStyle = 'rgba(15,22,19,.56)';
+  context.fillRect(6, 5, 244, 38);
+  context.font = 'bold 24px Arial, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.lineJoin = 'round';
+  context.lineWidth = 5;
+  context.strokeStyle = 'rgba(8,12,10,.9)';
+  context.strokeText(username.slice(0, 16), 128, 24, 228);
+  context.fillStyle = '#f0f5e9';
+  context.fillText(username.slice(0, 16), 128, 24, 228);
+  const texture = new THREE.CanvasTexture(image);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true, depthWrite: false }));
+  sprite.scale.set(2.15, 0.4, 1);
+  sprite.position.set(0, 2.22, 0);
+  return sprite;
+}
+
+function createRemotePlayerMesh(username) {
+  const group = new THREE.Group();
+  const skin = remotePlayerMaterial(username, 'head');
+  const shirt = remotePlayerMaterial(username, 'body');
+  const pants = remotePlayerMaterial(username, 'legs');
+  const addPart = (size, position, material) => {
+    const part = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    part.position.set(...position);
+    group.add(part);
+  };
+  addPart([0.48, 0.48, 0.48], [0, 1.55, 0], skin);
+  addPart([0.5, 0.72, 0.28], [0, 0.94, 0], shirt);
+  addPart([0.2, 0.7, 0.22], [-0.36, 0.95, 0], shirt);
+  addPart([0.2, 0.7, 0.22], [0.36, 0.95, 0], shirt);
+  addPart([0.22, 0.7, 0.22], [-0.13, 0.35, 0], pants);
+  addPart([0.22, 0.7, 0.22], [0.13, 0.35, 0], pants);
+  group.add(makePlayerNameTag(username || 'Player'));
+  group.userData.remoteEntityKind = 'player';
+  return group;
+}
+
+function normalizeRemoteMobType(name) {
+  const value = String(name || '').toLowerCase().replace(/^minecraft:/, '').replace(/[^a-z0-9_]/g, '');
+  const aliases = {
+    cave_spider: 'spider', husk: 'zombie', zombie_villager: 'zombie', stray: 'skeleton',
+    skeleton_horse: 'horse', zombie_horse: 'horse', guardian: 'squid', elder_guardian: 'squid',
+    mooshroom: 'mooshroom', snow_golem: 'villager', iron_golem: 'villager',
+    evocation_illager: 'villager', vindicator: 'villager', vindication_illager: 'villager',
+    silverfish: 'spider', endermite: 'spider', slime: 'pig', magma_cube: 'pig',
+    ghast: 'creeper', blaze: 'skeleton', vex: 'bat',
+  };
+  const type = aliases[value] || value;
+  return mobPalette[type] ? type : 'pig';
+}
+
+function disposeRemoteEntity(id) {
+  const record = remoteEntities.get(id);
+  if (!record) return;
+  remoteEntityGroup.remove(record.mesh);
+  record.mesh.traverse((part) => {
+    if (part.geometry) part.geometry.dispose();
+    if (part.isSprite && part.material) {
+      part.material.map?.dispose();
+      part.material.dispose();
+    }
+  });
+  remoteEntities.delete(id);
+}
+
+function updateRemoteEntities(entries) {
+  if (!Array.isArray(entries)) return;
+  const seen = new Set();
+  for (const entry of entries.slice(0, 80)) {
+    if (!entry || entry.id === undefined || !entry.position) continue;
+    const x = Number(entry.position.x);
+    const y = Number(entry.position.y);
+    const z = Number(entry.position.z);
+    if (![x, y, z].every(Number.isFinite)) continue;
+    const id = String(entry.id).slice(0, 48);
+    if (!id) continue;
+    const isPlayer = entry.kind === 'player' || entry.name === 'player';
+    const username = String(entry.username || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16) || 'Player';
+    const mobType = normalizeRemoteMobType(entry.name);
+    const visualKey = isPlayer ? `player:${username}` : `mob:${mobType}`;
+    let record = remoteEntities.get(id);
+    if (record && record.visualKey !== visualKey) {
+      disposeRemoteEntity(id);
+      record = null;
+    }
+    if (!record) {
+      const mesh = isPlayer
+        ? createRemotePlayerMesh(username)
+        : createMobMesh({ id, type: mobType, x, y, z, health: 20, legs: [] }, remoteEntityGroup);
+      if (!mesh) continue;
+      mesh.position.set(x, y, z);
+      if (isPlayer) remoteEntityGroup.add(mesh);
+      record = { mesh, visualKey };
+      remoteEntities.set(id, record);
+    }
+    const targetPosition = record.mesh.userData.targetPosition || new THREE.Vector3(x, y, z);
+    targetPosition.set(x, y, z);
+    record.mesh.userData.targetPosition = targetPosition;
+    record.mesh.userData.targetYaw = Number.isFinite(Number(entry.yaw)) ? Number(entry.yaw) : 0;
+    record.mesh.visible = true;
+    seen.add(id);
+  }
+  for (const id of remoteEntities.keys()) if (!seen.has(id)) disposeRemoteEntity(id);
+}
+
+function clearRemoteEntities() {
+  for (const id of [...remoteEntities.keys()]) disposeRemoteEntity(id);
+}
+
+function animateRemoteEntities(dt) {
+  const smoothing = 1 - Math.exp(-13 * dt);
+  for (const { mesh } of remoteEntities.values()) {
+    const target = mesh.userData.targetPosition;
+    if (target) mesh.position.lerp(target, smoothing);
+    const targetYaw = mesh.userData.targetYaw;
+    if (Number.isFinite(targetYaw)) {
+      const difference = THREE.MathUtils.euclideanModulo(targetYaw - mesh.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+      mesh.rotation.y += difference * smoothing;
+    }
+  }
+}
+
 function spawnMob(type, x, z) {
   const allowed = Object.keys(mobPalette);
   if (!allowed.includes(type)) return null;
@@ -960,8 +1196,10 @@ function createNewWorld() {
 }
 
 function setActiveLayer(layerId) {
+  const previousScreen = screen;
   for (const id of hideableLayers) $(id).classList.toggle('hidden', id !== layerId);
   screen = layerId ? layerId.replace('-screen', '') : 'game';
+  if (previousScreen === 'server' && screen !== 'server') stopHostStatusPolling();
   document.body.classList.toggle('menu-open', screen === 'menu');
   document.body.classList.toggle('overlay-open', screen !== 'game');
   if (screen !== 'game') {
@@ -1608,7 +1846,7 @@ function runCommand(text) {
   if (command === 'help') {
     appendCommand('/help · /seed · /time set day|night|<ticks> · /weather clear|rain|thunder · /difficulty peaceful|easy|normal|hard');
     appendCommand('/gamemode creative|survival · /tp x y z · /setblock x y z block · /fill x1 y1 z1 x2 y2 z2 block');
-    appendCommand('/give item [count] · /summon pig|cow|sheep|chicken|rabbit|wolf|horse|villager|zombie|skeleton|creeper|spider|enderman|witch|squid · /kill [@e] · /spawnpoint');
+    appendCommand('/give item [count] · /summon pig|cow|sheep|chicken|rabbit|wolf|ocelot|horse|llama|polar_bear|mooshroom|parrot|bat|villager|zombie|skeleton|creeper|spider|enderman|witch|squid · /kill [@e] · /spawnpoint');
   } else if (command === 'seed') {
     appendCommand(`World seed: ${worldSeed}`);
   } else if (command === 'time' && parts[0] === 'set') {
@@ -1768,6 +2006,15 @@ function serverMessage(payload) {
       $('server-overlay').classList.remove('hidden');
       $('auth-card').classList.remove('hidden');
     } else if (remoteStatus === 'error') {
+      if (remoteActive) {
+        remoteActive = false;
+        remoteEntityGroup.visible = false;
+        clearRemoteEntities();
+        mobGroup.visible = true;
+        drawBlockWorld(worldMap);
+        renderHotbar();
+        updateHud();
+      }
       showServerFailure(next.error || 'Could not connect.');
     } else if (remoteStatus === 'disconnected') {
       const disconnectError = next.error || remoteSession?.error;
@@ -1778,6 +2025,8 @@ function serverMessage(payload) {
       } else if (disconnectError) {
         if (remoteActive) {
           remoteActive = false;
+          remoteEntityGroup.visible = false;
+          clearRemoteEntities();
           mobGroup.visible = true;
           drawBlockWorld(worldMap);
           renderHotbar();
@@ -1790,6 +2039,8 @@ function serverMessage(payload) {
         $('server-overlay').classList.add('hidden');
         if (remoteActive) {
           remoteActive = false;
+          remoteEntityGroup.visible = false;
+          clearRemoteEntities();
           mobGroup.visible = true;
           drawBlockWorld(worldMap);
           renderHotbar();
@@ -1810,8 +2061,15 @@ function serverMessage(payload) {
       remoteBlocks.set(keyOf(Number(entry[0]), Number(entry[1]), Number(entry[2])), String(entry[3]));
     }
     drawBlockWorld(remoteBlocks);
+    updateRemoteEntities(payload.entities || []);
     remoteTargetHint = `${remoteBlocks.size.toLocaleString()} nearby blocks streamed`;
-    $('remote-hint').innerHTML = `Server world stream <span>·</span> ${remoteBlocks.size.toLocaleString()} nearby blocks`;
+    $('remote-hint').textContent = `Server world stream · ${remoteBlocks.size.toLocaleString()} nearby blocks`;
+  } else if (payload.type === 'entities') {
+    updateRemoteEntities(payload.entities || []);
+    const entities = Array.isArray(payload.entities) ? payload.entities : [];
+    const playersNearby = entities.filter((entity) => entity.kind === 'player' || entity.name === 'player').length;
+    const animalsNearby = entities.length - playersNearby;
+    $('remote-hint').textContent = `Nearby players: ${playersNearby} · animals/mobs: ${animalsNearby}`;
   } else if (payload.type === 'player') {
     if (!remoteSession) remoteSession = {};
     remoteSession.position = payload.position || remoteSession.position;
@@ -1868,6 +2126,8 @@ function activateRemote() {
   saveWorld();
   remoteActive = true;
   remoteBlocks.clear();
+  clearRemoteEntities();
+  remoteEntityGroup.visible = true;
   remoteSession = remoteSession || {};
   mobGroup.visible = false;
   while (worldGroup.children.length) worldGroup.remove(worldGroup.children[0]);
@@ -1884,6 +2144,8 @@ function leaveRemoteMode() {
   remoteActive = false;
   remoteStatus = 'disconnected';
   remoteBlocks.clear();
+  clearRemoteEntities();
+  remoteEntityGroup.visible = false;
   remoteSession = null;
   mobGroup.visible = true;
   document.body.classList.remove('server-mode');
@@ -1965,6 +2227,178 @@ async function disconnectServer(callApi = true) {
   else if (screen !== 'game') setActiveLayer(null);
 }
 
+async function parseHostResponse(response) {
+  let payload = {};
+  try { payload = await response.json(); } catch { /* The bridge may have returned a non-JSON error page. */ }
+  if (!response.ok) throw new Error(payload.error || `Hosting request failed (HTTP ${response.status}).`);
+  return payload;
+}
+
+async function ensureHostControlToken() {
+  if (hostControlToken) return hostControlToken;
+  const response = await fetch('/api/host/session', { cache: 'no-store' });
+  const payload = await parseHostResponse(response);
+  if (!payload.token) throw new Error('Could not create a local hosting session. Open the app at localhost on the computer that should host the server.');
+  hostControlToken = payload.token;
+  return hostControlToken;
+}
+
+async function hostRequest(path, options = {}) {
+  const token = await ensureHostControlToken();
+  const headers = new Headers(options.headers || {});
+  headers.set('X-Blockcraft-Host-Token', token);
+  const response = await fetch(path, { ...options, headers, cache: 'no-store' });
+  try {
+    return await parseHostResponse(response);
+  } catch (error) {
+    if (response.status === 403) hostControlToken = null;
+    throw error;
+  }
+}
+
+function renderHostUnavailable(message) {
+  hostControlToken = null;
+  hostStatusCache = null;
+  const banner = $('host-runtime-status');
+  banner.className = 'host-runtime-status status-error';
+  $('host-status-text').textContent = message;
+  $('host-start-button').disabled = true;
+  $('host-console').classList.add('hidden');
+}
+
+function renderHostStatus(data) {
+  hostStatusCache = data;
+  const banner = $('host-runtime-status');
+  banner.className = `host-runtime-status status-${String(data.status || 'stopped')}`;
+  const descriptions = {
+    starting: 'Java server is starting…', running: `Server is running · Java ${data.version || '1.12.2'}`,
+    stopping: 'Server is saving and stopping…', stopped: 'Server stopped.', error: 'The server reported an error. Check its log below.',
+  };
+  $('host-status-text').textContent = data.javaAvailable ? descriptions[data.status] || descriptions.stopped : data.javaMessage || 'Install Java to host a server.';
+  const active = ['starting', 'running', 'stopping'].includes(data.status);
+  $('host-server-form').classList.toggle('hidden', active);
+  $('host-console').classList.toggle('hidden', !active && data.status !== 'error');
+  $('host-console-status').textContent = descriptions[data.status] || descriptions.stopped;
+  $('host-stop-button').disabled = !['starting', 'running'].includes(data.status);
+  $('host-jar-file').required = !data.jarReady && !$('host-jar-file').files.length;
+  if (data.jarReady) {
+    $('host-jar-note').textContent = `A server JAR is saved on this computer (${(data.jarBytes / 1024 / 1024).toFixed(1)} MiB). Choose another file to replace it.`;
+  } else if (!$('host-jar-file').files.length) {
+    $('host-jar-note').textContent = 'Select a trusted Minecraft Java 1.12.2 server JAR (up to 128 MiB).';
+  }
+  const canStart = data.javaAvailable && !active && Boolean(data.jarReady || $('host-jar-file').files.length) && $('host-eula').checked;
+  $('host-start-button').disabled = !canStart;
+  const addressNode = $('host-addresses');
+  addressNode.replaceChildren();
+  const addresses = Array.isArray(data.addresses) ? data.addresses : [];
+  if (addresses.length) {
+    for (const address of addresses) {
+      const item = document.createElement('code');
+      item.textContent = address;
+      addressNode.append(item);
+    }
+    $('host-address-note').textContent = 'Share a private LAN address below with friends on the same network.';
+  } else if (data.status === 'running' || data.status === 'starting') {
+    $('host-address-note').textContent = `Share this computer’s private LAN IP with port ${data.port}.`;
+  }
+  $('host-log').textContent = Array.isArray(data.logs) ? data.logs.join('\n') : '';
+  $('host-log').scrollTop = $('host-log').scrollHeight;
+}
+
+async function refreshHostStatus() {
+  if (hostStatusBusy) return;
+  hostStatusBusy = true;
+  try {
+    const response = await fetch('/api/host/status', { cache: 'no-store' });
+    const payload = await parseHostResponse(response);
+    renderHostStatus(payload);
+  } catch (error) {
+    if (/localhost|Local hosting controls|this computer/i.test(error.message)) {
+      stopHostStatusPolling();
+      renderHostUnavailable('Local hosting controls work only when Blockcraft runs on this computer. Open http://localhost:5173; an Arena preview cannot expose a Minecraft server port.');
+    } else {
+      $('host-status-text').textContent = error.message || 'Could not check the local Java server.';
+      $('host-runtime-status').className = 'host-runtime-status status-error';
+    }
+  } finally {
+    hostStatusBusy = false;
+  }
+}
+
+function startHostStatusPolling() {
+  if (hostStatusPolling) return;
+  void refreshHostStatus();
+  hostStatusPolling = window.setInterval(() => void refreshHostStatus(), 2500);
+}
+
+function selectServerTab(tabName) {
+  const selected = tabName === 'host' ? 'host' : 'join';
+  for (const tab of document.querySelectorAll('[data-server-tab]')) {
+    const active = tab.dataset.serverTab === selected;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  }
+  $('join-server-panel').classList.toggle('hidden', selected !== 'join');
+  $('host-server-panel').classList.toggle('hidden', selected !== 'host');
+  if (selected === 'host') startHostStatusPolling();
+}
+
+function stopHostStatusPolling() {
+  if (hostStatusPolling) window.clearInterval(hostStatusPolling);
+  hostStatusPolling = null;
+}
+
+async function startHostedServer(event) {
+  event.preventDefault();
+  const button = $('host-start-button');
+  const jarFile = $('host-jar-file').files[0];
+  const originalLabel = button.querySelector('b').textContent;
+  button.disabled = true;
+  button.querySelector('b').textContent = jarFile ? 'Saving server JAR…' : 'Starting server…';
+  try {
+    await ensureHostControlToken();
+    if (jarFile) {
+      await hostRequest('/api/host/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: jarFile,
+      });
+    }
+    button.querySelector('b').textContent = 'Starting server…';
+    await hostRequest('/api/host/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        port: Number($('host-port').value),
+        memoryMb: Number($('host-memory').value),
+        acceptEula: $('host-eula').checked,
+      }),
+    });
+    $('host-console').classList.remove('hidden');
+    startHostStatusPolling();
+    await refreshHostStatus();
+  } catch (error) {
+    $('host-runtime-status').className = 'host-runtime-status status-error';
+    $('host-status-text').textContent = error.message || 'Could not start the local server.';
+    showToast(error.message || 'Could not start the local server.');
+    await refreshHostStatus();
+  } finally {
+    button.querySelector('b').textContent = originalLabel;
+    if (hostStatusCache) renderHostStatus(hostStatusCache);
+  }
+}
+
+async function stopHostedServer() {
+  $('host-stop-button').disabled = true;
+  try {
+    await hostRequest('/api/host/stop', { method: 'POST' });
+    await refreshHostStatus();
+  } catch (error) {
+    $('host-status-text').textContent = error.message || 'Could not stop the server.';
+    $('host-runtime-status').className = 'host-runtime-status status-error';
+  }
+}
+
 function startAmbience() {
   if (!audioContext) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -2002,6 +2436,7 @@ function animate(now) {
   if (screen === 'game') {
     if (remoteSession) {
       if (remoteActive) {
+        animateRemoteEntities(dt);
         setCamera();
         updateLighting(worldTime);
         updateHud();
@@ -2051,8 +2486,10 @@ $('resume-button').addEventListener('click', () => {
 });
 $('server-menu-button').addEventListener('click', () => {
   setActiveLayer('server-screen');
+  selectServerTab('join');
   if (document.pointerLockElement) document.exitPointerLock();
 });
+document.querySelectorAll('[data-server-tab]').forEach((tab) => tab.addEventListener('click', () => selectServerTab(tab.dataset.serverTab)));
 $('server-close').addEventListener('click', () => setActiveLayer('menu-screen'));
 $('home-button').addEventListener('click', showMenu);
 $('pause-button').addEventListener('click', openPause);
@@ -2133,6 +2570,22 @@ $('server-form').addEventListener('submit', (event) => {
   if (!formData.version) formData.version = '';
   if (!formData.host || !formData.username) return;
   connectToServer(formData);
+});
+$('host-server-form').addEventListener('submit', startHostedServer);
+$('host-stop-button').addEventListener('click', stopHostedServer);
+$('host-eula').addEventListener('change', () => {
+  if (hostStatusCache) renderHostStatus(hostStatusCache);
+});
+$('host-jar-file').addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (file && file.size > 128 * 1024 * 1024) {
+    event.target.value = '';
+    showToast('Server JAR exceeds the 128 MiB upload limit.');
+  } else if (file && !file.name.toLowerCase().endsWith('.jar')) {
+    event.target.value = '';
+    showToast('Choose a .jar server file.');
+  }
+  if (hostStatusCache) renderHostStatus(hostStatusCache);
 });
 $('disconnect-button').addEventListener('click', () => disconnectServer(true));
 $('copy-code').addEventListener('click', async () => {

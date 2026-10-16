@@ -71,7 +71,7 @@
             </div>
             <div class="menu-buttons">
               <button class="primary-button" id="play-button"><span class="play-triangle">▶</span><span><b id="play-label">Create new world</b><small>Pick a mode and step inside</small></span><span class="button-arrow">↗</span></button>
-              <button class="secondary-button" id="server-menu-button"><span class="button-icon">⌁</span><span><b>Join a server</b><small>Connect to a Java Edition world</small></span><span class="button-arrow">↗</span></button>
+              <button class="secondary-button" id="server-menu-button"><span class="button-icon">⌁</span><span><b>Servers</b><small>Join or host a Java Edition world</small></span><span class="button-arrow">↗</span></button>
               <button class="secondary-button subtle-button" id="resume-button"><span class="button-icon">◷</span><span><b>Continue Cedar Valley</b><small>Last played just now · Auto-saved</small></span><span class="button-arrow">↗</span></button>
             </div>
             <div class="menu-foot"><span>BUILD 0.1.0 · LOCAL WORLD</span><span>WASD TO MOVE <i>•</i> MOUSE TO LOOK</span></div>
@@ -112,8 +112,10 @@
 
         <section class="screen-layer hidden" id="server-screen">
           <div class="server-card">
-            <div class="panel-heading"><div><div class="eyebrow"><span class="live-dot"></span> ONLINE WORLDS</div><h2>Join a server</h2></div><button class="close-button" id="server-close" aria-label="Close server screen">×</button></div>
-            <p class="server-intro">Connect to a Minecraft <b>Java Edition</b> server. Your local world stays right where you left it.</p>
+            <div class="panel-heading"><div><div class="eyebrow"><span class="live-dot"></span> JAVA MULTIPLAYER</div><h2>Servers</h2></div><button class="close-button" id="server-close" aria-label="Close server screen">×</button></div>
+            <p class="server-intro">Join an existing Java server, or run a small server JAR from this computer for friends on your LAN.</p>
+            <div class="server-tabs" role="tablist" aria-label="Server options"><button type="button" class="active" data-server-tab="join" role="tab" aria-selected="true">Join a server</button><button type="button" data-server-tab="host" role="tab" aria-selected="false">Host on this PC</button></div>
+            <div class="server-tab-panel" id="join-server-panel">
             <form id="server-form" class="server-form">
               <label class="field full-field"><span>SERVER ADDRESS</span><input id="server-host" name="host" placeholder="play.example.net" autocomplete="off" required /><small>Domain or IP address</small></label>
               <div class="field-row"><label class="field"><span>PORT</span><input id="server-port" name="port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>GAME VERSION</span><select id="server-version" name="version"><option value="">Auto detect</option><option>26.1</option><option>1.21.11</option><option>1.21.9</option><option>1.21.8</option><option>1.21.6</option><option>1.21.5</option><option>1.21.4</option><option>1.21.3</option><option>1.21.1</option><option>1.20.6</option><option>1.20.4</option><option>1.20.2</option><option>1.20.1</option><option>1.19.4</option><option>1.18.2</option><option>1.16.5</option><option>1.12.2</option></select></label></div>
@@ -122,6 +124,25 @@
               <div class="server-warning"><span>i</span><p>This Java bridge is not an official Mojang client. Connections come from the machine running Node; hosted previews may use cloud IPs that anti-VPN checks reject. The app will not bypass server IP rules. Run locally on your normal connection with VPN/proxy off, or contact the server staff.</p></div>
               <button class="primary-button connect-button" type="submit" id="connect-button"><span class="button-icon">⌁</span><span><b>Connect</b><small>Join this server from your world</small></span><span class="button-arrow">↗</span></button>
             </form>
+            </div>
+            <div class="server-tab-panel hidden" id="host-server-panel">
+              <div class="host-runtime-status" id="host-runtime-status"><span class="host-status-light"></span><span id="host-status-text">Checking local Java and server status…</span></div>
+              <p class="host-intro">Choose a Minecraft Java 1.12.2 server JAR to run on this computer. Java 8 or newer is needed; the JAR must be compatible with the version your friends use.</p>
+              <form id="host-server-form" class="server-form">
+                <label class="field full-field"><span>SERVER JAR</span><input id="host-jar-file" type="file" accept=".jar,application/java-archive" required /><small id="host-jar-note">Select a trusted Mojang, Paper, or Spigot 1.12.2 server JAR (up to 128 MiB).</small></label>
+                <div class="field-row"><label class="field"><span>SERVER PORT</span><input id="host-port" type="number" min="1" max="65535" value="25565" required /></label><label class="field"><span>MAX MEMORY</span><select id="host-memory"><option value="1024">1 GiB</option><option value="2048" selected>2 GiB</option><option value="4096">4 GiB</option></select></label></div>
+                <label class="host-eula"><input id="host-eula" type="checkbox" required /><span>I have read and agree to the <a href="https://www.minecraft.net/eula" target="_blank" rel="noreferrer">Minecraft EULA</a>.</span></label>
+                <div class="server-warning"><span>!</span><p>A server JAR executes code on this computer. Only run a file you trust. Blockcraft stores it in your private <code>.blockcraft/hosted-server</code> folder, starts Java with the selected memory limit, and does not modify your browser world.</p></div>
+                <button class="primary-button connect-button" type="submit" id="host-start-button"><span class="button-icon">⌁</span><span><b>Start LAN server</b><small>Run this Java server on this PC</small></span><span class="button-arrow">↗</span></button>
+              </form>
+              <div class="host-console hidden" id="host-console">
+                <div class="host-console-heading"><div><span class="host-status-light"></span><b id="host-console-status">Server starting…</b></div><button type="button" class="disconnect-button" id="host-stop-button">Stop server</button></div>
+                <p id="host-address-note">Other computers on your LAN can join using one of the addresses below.</p>
+                <div class="host-addresses" id="host-addresses"></div>
+                <pre class="host-log" id="host-log" aria-live="polite"></pre>
+              </div>
+              <p class="host-network-note">This hosts on the computer running Node. Friends on your LAN may need the OS firewall to allow Java. Public internet access is not automatic: router port-forwarding and firewall configuration are separate, and Arena previews do not expose a Minecraft port.</p>
+            </div>
           </div>
         </section>
 
